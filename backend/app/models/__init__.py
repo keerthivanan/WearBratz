@@ -16,10 +16,11 @@ class Customer(Base):
 
     id = Column(String, primary_key=True, default=generate_uuid)
     email = Column(String, unique=True, index=True, nullable=False)
+    customer_code = Column(String, unique=True, index=True)  # e.g. "Wearbratz01"
     first_name = Column(String)
     last_name = Column(String)
     phone = Column(String)
-    
+
     auth_provider_id = Column(String) # 'email' or 'google:ID'
     password_hash = Column(String) # For email/password auth
     

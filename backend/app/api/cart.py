@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 import uuid
+import json
 from typing import List
 
 from app.core.database import get_db
@@ -46,10 +47,12 @@ async def save_cart(cart_in: CartUpsert, db: AsyncSession = Depends(get_db)):
     )
     existing = result.first()
 
+    items_str = json.dumps(items_json)
+
     if existing:
         await db.execute(
-            text("UPDATE carts SET items = :items, updated_at = NOW() WHERE session_id = :sid"),
-            {"items": str(items_json).replace("'", '"'), "sid": cart_in.session_id}
+            text("UPDATE carts SET items = :items::jsonb, updated_at = NOW() WHERE session_id = :sid"),
+            {"items": items_str, "sid": cart_in.session_id}
         )
     else:
         await db.execute(
@@ -59,7 +62,7 @@ async def save_cart(cart_in: CartUpsert, db: AsyncSession = Depends(get_db)):
                 "id": str(uuid.uuid4()),
                 "sid": cart_in.session_id,
                 "cid": cart_in.customer_id,
-                "items": str(items_json).replace("'", '"'),
+                "items": items_str,
             }
         )
     await db.commit()

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 import uuid
@@ -46,11 +46,19 @@ def _make_user_dict(customer: Customer) -> dict:
     return {
         "id": customer.id,
         "email": customer.email,
+        "customer_code": customer.customer_code,
         "first_name": customer.first_name,
         "last_name": customer.last_name,
         "total_orders": customer.total_orders or 0,
         "total_spent": customer.total_spent or 0.0,
     }
+
+
+async def _generate_customer_code(db: AsyncSession) -> str:
+    """Generate a unique sequential code like Wearbratz01, Wearbratz02, ..."""
+    count_result = await db.execute(select(func.count(Customer.id)))
+    count = count_result.scalar() or 0
+    return f"Wearbratz{(count + 1):02d}"
 
 
 async def get_current_user(
@@ -86,9 +94,11 @@ async def signup(body: SignupRequest, db: AsyncSession = Depends(get_db)):
     if len(body.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
 
+    customer_code = await _generate_customer_code(db)
     new_user = Customer(
         id=str(uuid.uuid4()),
         email=body.email.lower(),
+        customer_code=customer_code,
         first_name=body.first_name,
         last_name=body.last_name,
         auth_provider_id="email",
@@ -164,9 +174,11 @@ async def google_auth(body: GoogleAuthRequest, db: AsyncSession = Depends(get_db
     else:
         # Create new user from Google
         name_parts = google_info.get("name", "").split(" ", 1)
+        customer_code = await _generate_customer_code(db)
         user = Customer(
             id=str(uuid.uuid4()),
             email=email,
+            customer_code=customer_code,
             first_name=name_parts[0] if name_parts else None,
             last_name=name_parts[1] if len(name_parts) > 1 else None,
             auth_provider_id=f"google:{google_id}",

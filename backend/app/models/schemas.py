@@ -94,7 +94,8 @@ class OrderLineItem(BaseModel):
     price: float
 
 class OrderCreate(BaseModel):
-    customer_email: str
+    customer_email: Optional[str] = None
+    customer_id: Optional[str] = None   # pass when user is logged in
     customer_name: Optional[str] = None
     line_items: List[OrderLineItem]
     subtotal: float

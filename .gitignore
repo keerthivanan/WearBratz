@@ -1,49 +1,107 @@
-# Dependencies
-node_modules/
-backend/venv/
-.venv/
-env/
-venv/
-lib/
-lib64/
-bin/
-include/
-share/
-pycache/
-__pycache__/
-*.py[cod]
-*$py.class
+# ============================================================
+# CONFIDENTIAL — DO NOT COMMIT
+# ============================================================
 
-# Next.js
-.next/
-out/
-build/
+# n8n workflows & database (private business automation & plans)
+n8n_workflow&database/
 
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
+# Business plan & internal docs (private)
+*masterplan*
+*-plan.md
+*-plan.txt
+docs/internal/
 
-# Environment variables (DO NOT COMMIT SECRETS)
+# ============================================================
+# SECRETS & CREDENTIALS
+# ============================================================
+
+# Environment variables (NEVER commit real secrets)
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 *.env
+!*.env.example
 
-# OS Files
-.DS_Store
-Thumbs.db
+# ============================================================
+# TESTING (keep private)
+# ============================================================
+**/tests/
+**/__tests__/
+**/*.test.*
+**/*.spec.*
+**/test_*.py
+**/_test/
+**/coverage/
+**/.pytest_cache/
+**/jest.config.*
+**/vitest.config.*
 
-# Logs
+# ============================================================
+# DEPENDENCIES
+# ============================================================
+**/node_modules/
+
+# Python virtual environments
+**/venv/
+**/.venv/
+**/env/
+**/ENV/
+**/lib/
+**/lib64/
+**/bin/
+**/include/
+**/share/
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/*.egg-info/
+**/*.egg
+
+# ============================================================
+# BUILD OUTPUTS
+# ============================================================
+
+# Next.js
+.next/
+out/
+
+# Python build
+dist/
+build/
+
+# ============================================================
+# DATABASE FILES
+# ============================================================
+*.sqlite3
+*.sqlite
+*.db
+
+# ============================================================
+# LOGS
+# ============================================================
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 logs/
-*.log
 
-# Database
-*.sqlite3
-*.db
+# ============================================================
+# IDE & OS
+# ============================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ============================================================
+# MISC
+# ============================================================
+**/.turbo/
+**/build.log

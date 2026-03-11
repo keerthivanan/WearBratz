@@ -27,7 +27,11 @@ async def create_order(order_in: OrderCreate, db: AsyncSession = Depends(get_db)
     
     # Find or create customer
     customer = None
-    if order_in.customer_email:
+    if order_in.customer_id:
+        # Logged-in user: look up directly by ID
+        result = await db.execute(select(Customer).where(Customer.id == order_in.customer_id))
+        customer = result.scalar_one_or_none()
+    elif order_in.customer_email:
         result = await db.execute(select(Customer).where(Customer.email == order_in.customer_email))
         customer = result.scalar_one_or_none()
         if not customer:
