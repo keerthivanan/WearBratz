@@ -1,0 +1,189 @@
+{
+  "name": "Bratz Drip — 02 Order Shipped Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT o.*, c.email as c_email FROM orders o LEFT JOIN customers c ON o.customer_id = c.id WHERE o.status = 'processing' AND o.tracking_number IS NOT NULL AND o.shipped_at IS NULL ORDER BY o.created_at ASC LIMIT 20"
+      },
+      "id": "get-orders-to-ship",
+      "name": "Get Orders Ready to Ship",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "miastore-postgres",
+          "name": "Miastore PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $items().length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "has-orders",
+      "name": "Has Orders to Process?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-orders",
+      "name": "Process Each Order",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        900,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "shipping@yourmiastore.com",
+        "fromName": "Bratz Drip Shipping",
+        "toEmail": "={{ $json.customer_email }}",
+        "subject": "🚚 Your Bratz Drip order is on its way! #{{ $json.order_number }}",
+        "emailType": "html",
+        "message": "<!DOCTYPE html><html><head><style>body{font-family:Arial,sans-serif;background:#f8f0ff;margin:0}.container{max-width:600px;margin:20px auto;background:white;border-radius:16px;overflow:hidden}.header{background:linear-gradient(135deg,#FF0066,#C084FC);padding:40px;text-align:center;color:white}.header h1{font-size:28px;margin:0;letter-spacing:3px}.body{padding:32px;text-align:center}.icon{font-size:64px;margin:20px 0}.tracking-box{background:#f8f0ff;border-radius:12px;padding:20px;margin:24px 0;border:2px solid #C084FC}.tracking-number{font-size:22px;font-weight:900;color:#FF0066;letter-spacing:3px;font-family:monospace}.cta{display:inline-block;background:linear-gradient(135deg,#FF0066,#FF2D9B);color:white;padding:14px 32px;border-radius:40px;text-decoration:none;font-weight:700;letter-spacing:2px;font-size:14px;margin:16px 0}.footer{background:#1A0A2E;padding:20px;text-align:center;color:rgba(255,255,255,0.5);font-size:12px}</style></head><body><div class='container'><div class='header'><h1>IT'S ON ITS WAY! 🚚</h1><p>Your Bratz Drip order just left the building</p></div><div class='body'><div class='icon'>📦</div><p style='font-size:18px;color:#1A0A2E'>Hey babe! Your order <strong>#{{ $json.order_number }}</strong> has shipped!</p><p style='color:#888'>Estimated delivery: <strong>2–4 business days</strong></p><div class='tracking-box'><div style='color:#888;font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px'>Tracking Number</div><div class='tracking-number'>{{ $json.tracking_number }}</div></div><a href='https://bratzdrip.com/track/{{ $json.tracking_number }}' class='cta'>TRACK YOUR PACKAGE ✦</a><p style='color:#aaa;font-size:13px;margin-top:24px'>Get ready to SLAY 💅</p></div><div class='footer'><p>© 2025 Bratz Drip · bratzdrip.com</p></div></div></body></html>"
+      },
+      "id": "send-shipping-email",
+      "name": "Send Shipping Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE orders SET status = 'shipped', shipped_at = NOW() WHERE id = '{{ $json.id }}'; INSERT INTO order_status_history (order_id, old_status, new_status, note) VALUES ('{{ $json.id }}', 'processing', 'shipped', 'Auto-shipped via n8n workflow');"
+      },
+      "id": "update-shipped",
+      "name": "Mark Order as Shipped",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        380
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "miastore-postgres",
+          "name": "Miastore PostgreSQL"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Get Orders Ready to Ship",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Orders Ready to Ship": {
+      "main": [
+        [
+          {
+            "node": "Has Orders to Process?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Orders to Process?": {
+      "main": [
+        [
+          {
+            "node": "Process Each Order",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Process Each Order": {
+      "main": [
+        [
+          {
+            "node": "Send Shipping Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Mark Order as Shipped",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Shipping Email": {
+      "main": [
+        [
+          {
+            "node": "Process Each Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "bratz-drip"
+    }
+  ]
+}

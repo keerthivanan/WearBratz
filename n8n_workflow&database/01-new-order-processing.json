@@ -1,0 +1,170 @@
+{
+  "name": "Bratz Drip — 01 New Order Processing",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "bratz-order-created",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook: Order Created",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst order = body.order;\nconst items = body.items || [];\n\nconst itemsHtml = items.map(i =>\n  `<tr>\n    <td style=\"padding:8px 12px;border-bottom:1px solid #f0e0ff\">${i.product_name} (${i.size})</td>\n    <td style=\"padding:8px 12px;border-bottom:1px solid #f0e0ff;text-align:center\">${i.quantity}</td>\n    <td style=\"padding:8px 12px;border-bottom:1px solid #f0e0ff;text-align:right\">$${(i.price * i.quantity).toFixed(2)}</td>\n  </tr>`\n).join('');\n\nreturn [{\n  json: {\n    order_id: order.id,\n    order_number: order.order_number,\n    customer_email: order.customer_email,\n    customer_name: order.customer_name || 'Bratz Babe',\n    total: order.total,\n    subtotal: order.subtotal,\n    discount: order.discount,\n    shipping_cost: order.shipping_cost,\n    promo_code: order.promo_code,\n    items_html: itemsHtml,\n    items_count: items.reduce((s, i) => s + i.quantity, 0),\n    created_at: new Date(order.created_at).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }),\n  }\n}];"
+      },
+      "id": "prepare-data",
+      "name": "Prepare Order Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "orders@yourmiastore.com",
+        "fromName": "Bratz Drip",
+        "toEmail": "={{ $json.customer_email }}",
+        "subject": "✨ Order Confirmed! #{{ $json.order_number }}",
+        "emailType": "html",
+        "message": "<!DOCTYPE html><html><head><meta charset='utf-8'><style>body{font-family:'Helvetica Neue',Arial,sans-serif;background:#f8f0ff;margin:0;padding:0}.container{max-width:600px;margin:0 auto;background:white;border-radius:16px;overflow:hidden;margin-top:20px;margin-bottom:20px}.header{background:linear-gradient(135deg,#FF0066,#C084FC);padding:40px;text-align:center}.header h1{color:white;font-size:32px;margin:0;letter-spacing:4px}.header p{color:rgba(255,255,255,0.8);margin:8px 0 0}.body{padding:32px}.greeting{font-size:18px;color:#1A0A2E;margin-bottom:8px}.subtext{color:#888;font-size:14px;margin-bottom:24px}.order-box{background:#f8f0ff;border-radius:12px;padding:20px;margin-bottom:24px}.order-number{font-size:24px;font-weight:900;color:#FF0066;letter-spacing:2px}.table{width:100%;border-collapse:collapse;margin:16px 0}th{background:#1A0A2E;color:white;padding:10px 12px;text-align:left;font-size:13px}td{font-size:14px;color:#333}.totals{margin-top:16px;border-top:2px solid #f0e0ff;padding-top:16px}.total-row{display:flex;justify-content:space-between;padding:4px 0;font-size:14px;color:#666}.total-final{display:flex;justify-content:space-between;padding:8px 0;font-size:20px;font-weight:900;color:#FF0066}.footer{background:#1A0A2E;padding:24px;text-align:center;color:rgba(255,255,255,0.5);font-size:12px}.footer a{color:#FF85C2}.cta{display:inline-block;background:linear-gradient(135deg,#FF0066,#FF2D9B);color:white;padding:14px 32px;border-radius:40px;text-decoration:none;font-weight:700;letter-spacing:2px;font-size:14px;margin:16px 0}</style></head><body><div class='container'><div class='header'><h1>BRATZ DRIP 💅</h1><p>Fashion That Bites Back</p></div><div class='body'><p class='greeting'>Hey {{ $json.customer_name }}! 🎉</p><p class='subtext'>Your order is confirmed and we're already obsessing over getting it to you.</p><div class='order-box'><div style='color:#888;font-size:12px;letter-spacing:2px;text-transform:uppercase'>Order Number</div><div class='order-number'>#{{ $json.order_number }}</div><div style='color:#888;font-size:12px;margin-top:4px'>Placed on {{ $json.created_at }}</div></div><table class='table'><thead><tr><th>Item</th><th style='text-align:center'>Qty</th><th style='text-align:right'>Price</th></tr></thead><tbody>{{ $json.items_html }}</tbody></table><div class='totals'><div class='total-row'><span>Subtotal</span><span>${{ $json.subtotal }}</span></div>{{ $json.promo_code ? `<div class='total-row' style='color:#22c55e'><span>Promo (${$json.promo_code})</span><span>-$${$json.discount}</span></div>` : '' }}<div class='total-row'><span>Shipping</span><span>{{ $json.shipping_cost == 0 ? 'FREE' : '$'+$json.shipping_cost }}</span></div><div class='total-final'><span>Total</span><span>${{ $json.total }}</span></div></div><div style='text-align:center;margin-top:24px'><a href='https://bratzdrip.com/orders/{{ $json.order_id }}' class='cta'>TRACK MY ORDER ✦</a></div><p style='color:#888;font-size:13px;text-align:center'>Questions? Reply to this email or DM us @bratzdrip 💜</p></div><div class='footer'><p>© 2025 Bratz Drip · <a href='https://bratzdrip.com'>bratzdrip.com</a></p><p><a href='#'>Unsubscribe</a></p></div></div></body></html>"
+      },
+      "id": "send-confirmation-email",
+      "name": "Send Order Confirmation Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        680,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE orders SET status = 'confirmed' WHERE id = '{{ $json.order_id }}'"
+      },
+      "id": "update-order-status",
+      "name": "Update Order to Confirmed",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        680,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "miastore-postgres",
+          "name": "Miastore PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://hooks.slack.com/services/YOUR_SLACK_WEBHOOK",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "🛍️ *New Order!* #{{ $json.order_number }} | {{ $json.customer_email }} | *${{ $json.total }}* ({{ $json.items_count }} items)"
+            }
+          ]
+        }
+      },
+      "id": "slack-notify",
+      "name": "Slack: Notify Team",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        680,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"success\": true, \"message\": \"Order processed\"}"
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook: Order Created": {
+      "main": [
+        [
+          {
+            "node": "Prepare Order Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Order Data": {
+      "main": [
+        [
+          {
+            "node": "Send Order Confirmation Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Update Order to Confirmed",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack: Notify Team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Order Confirmation Email": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "bratz-drip"
+    }
+  ]
+}

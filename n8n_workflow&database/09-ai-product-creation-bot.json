@@ -1,0 +1,99 @@
+{
+  "name": "09 - AI Product Creation Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "create-product-ai",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook: New Product Image",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a luxury doll fashion copywriter for Mia Store. You create compelling, elegant product listings. Always respond in valid JSON with keys: title, description, category, tags, seo_title, seo_description, price_suggestion, handle."
+            },
+            {
+              "role": "user",
+              "content": "=Create a product listing for this doll outfit image. Image URL: {{$json.body.image_url}}\nDetails provided: {{$json.body.details || 'No additional details'}}\nDoll type: {{$json.body.doll_type || 'Bratz'}}\n\nGenerate a luxury product listing in JSON format."
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 800,
+          "temperature": 0.7
+        }
+      },
+      "name": "GPT-4o: Generate Product Copy",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json.message?.content || $input.item.json.choices?.[0]?.message?.content || '{}';\nconst cleaned = raw.replace(/```json\\n?|```/g, '').trim();\ntry {\n  const parsed = JSON.parse(cleaned);\n  return [{\n    json: {\n      ...parsed,\n      sku: 'SKU-' + Date.now(),\n      status: 'draft',\n      inventory_quantity: 0,\n      images: [{ url: $('Webhook: New Product Image').item.json.body.image_url, alt: parsed.title }],\n      created_by: 'ai'\n    }\n  }];\n} catch(e) {\n  return [{ json: { error: 'Parse failed', raw } }];\n}"
+      },
+      "name": "Parse & Format Product",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BACKEND_URL}}/api/v1/products/",
+        "requestMethod": "POST",
+        "bodyParametersUi": {
+          "parameter": []
+        },
+        "jsonBody": "={{JSON.stringify($json)}}",
+        "options": {
+          "bodyContentType": "json"
+        }
+      },
+      "name": "Create Product in Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.FROM_EMAIL}}",
+        "toEmail": "={{$env.ADMIN_EMAIL}}",
+        "subject": "✨ New AI Product Draft Created: {{$('Parse & Format Product').item.json.title}}",
+        "emailFormat": "html",
+        "html": "<!DOCTYPE html><html><body style='font-family:Georgia,serif;'><div style='max-width:600px;margin:0 auto;padding:40px;'><h2 style='color:#C9A84C;'>New Product Draft Ready for Review</h2><p><strong>Title:</strong> {{$('Parse & Format Product').item.json.title}}</p><p><strong>Category:</strong> {{$('Parse & Format Product').item.json.category}}</p><p><strong>Suggested Price:</strong> ₹{{$('Parse & Format Product').item.json.price_suggestion}}</p><p><strong>Description:</strong> {{$('Parse & Format Product').item.json.description}}</p><a href='{{$env.BACKEND_URL}}/docs' style='background:#C9A84C;color:white;padding:10px 20px;text-decoration:none;'>Review in Admin</a></div></body></html>"
+      },
+      "name": "Notify Admin",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({ success: true, product_id: $('Create Product in Backend').item.json.id, title: $('Parse & Format Product').item.json.title })}}"
+      },
+      "name": "Respond with Product",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Webhook: New Product Image": { "main": [[{ "node": "GPT-4o: Generate Product Copy", "type": "main", "index": 0 }]] },
+    "GPT-4o: Generate Product Copy": { "main": [[{ "node": "Parse & Format Product", "type": "main", "index": 0 }]] },
+    "Parse & Format Product": { "main": [[{ "node": "Create Product in Backend", "type": "main", "index": 0 }]] },
+    "Create Product in Backend": { "main": [[{ "node": "Notify Admin", "type": "main", "index": 0 }]] },
+    "Notify Admin": { "main": [[{ "node": "Respond with Product", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

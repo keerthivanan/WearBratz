@@ -1,0 +1,67 @@
+{
+  "name": "08 - Restock Notification System",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "restock-notify",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook: Product Restocked",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.BACKEND_URL}}/api/v1/waitlist/{{$json.body.product_id}}",
+        "options": {}
+      },
+      "name": "Get Waitlist for Product",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "name": "Process Each Subscriber",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.FROM_EMAIL}}",
+        "toEmail": "={{$json.customer_email}}",
+        "subject": "Back in stock! {{$('Webhook: Product Restocked').item.json.body.product_title}} is available ✨",
+        "emailFormat": "html",
+        "html": "<!DOCTYPE html><html><body style='font-family:Georgia,serif;background:#fafafa;'><div style='max-width:600px;margin:0 auto;background:white;'><div style='background:#0a0a0a;padding:40px;text-align:center;'><h1 style='color:white;font-weight:300;letter-spacing:0.3em;font-size:24px;'>MIA STORE</h1></div><div style='padding:40px;text-align:center;'><div style='background:#fdf6e3;border:2px solid #C9A84C;padding:20px;margin-bottom:30px;display:inline-block;'><p style='color:#C9A84C;font-size:14px;font-weight:600;margin:0;text-transform:uppercase;letter-spacing:0.1em;'>🎉 Back in Stock!</p></div><h2 style='font-weight:300;color:#0a0a0a;'>{{$('Webhook: Product Restocked').item.json.body.product_title}}</h2><p style='color:#6b7280;line-height:1.7;'>Great news! The piece you've been waiting for is back in stock. But hurry — these sell out fast!</p>{{$('Webhook: Product Restocked').item.json.body.product_image ? '<img src=\"' + $('Webhook: Product Restocked').item.json.body.product_image + '\" style=\"max-width:200px;height:auto;margin:20px auto;display:block;\" />' : ''}}<div style='margin-top:20px;'><p style='color:#C9A84C;font-size:22px;font-weight:300;'>₹{{$('Webhook: Product Restocked').item.json.body.price}}</p><a href='{{$env.FRONTEND_URL}}/products/{{$('Webhook: Product Restocked').item.json.body.product_handle}}' style='display:inline-block;background:#C9A84C;color:white;padding:14px 32px;text-decoration:none;text-transform:uppercase;letter-spacing:0.15em;font-size:13px;margin-top:15px;'>Shop Now</a></div><p style='color:#9ca3af;font-size:11px;margin-top:30px;'>You're receiving this because you joined the waitlist for this item.</p></div></div></body></html>"
+      },
+      "name": "Send Restock Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"success\": true, \"notified\": {{$runIndex + 1}}}"
+      },
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Webhook: Product Restocked": { "main": [[{ "node": "Get Waitlist for Product", "type": "main", "index": 0 }]] },
+    "Get Waitlist for Product": { "main": [[{ "node": "Process Each Subscriber", "type": "main", "index": 0 }]] },
+    "Process Each Subscriber": { "main": [[{ "node": "Send Restock Email", "type": "main", "index": 0 }]] },
+    "Send Restock Email": { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

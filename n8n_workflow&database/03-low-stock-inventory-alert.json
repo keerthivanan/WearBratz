@@ -1,0 +1,188 @@
+{
+  "name": "Bratz Drip — 03 Low Stock Inventory Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 6 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.id, p.name, p.category, p.emoji, pi.size, pi.stock FROM products p JOIN product_inventory pi ON p.id = pi.product_id WHERE pi.stock <= 5 AND p.is_active = true ORDER BY pi.stock ASC"
+      },
+      "id": "check-low-stock",
+      "name": "Check Low Stock Products",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "miastore-postgres",
+          "name": "Miastore PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $items().length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "has-low-stock",
+      "name": "Any Low Stock Items?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst rows = items.map(i => {\n  const d = i.json;\n  const urgency = d.stock === 0 ? '🔴 OUT OF STOCK' : d.stock <= 2 ? '🟠 CRITICAL' : '🟡 LOW';\n  return `• ${d.emoji} ${d.name} (${d.size}): ${d.stock} left — ${urgency}`;\n}).join('\\n');\n\nconst outOfStock = items.filter(i => i.json.stock === 0).length;\nconst critical = items.filter(i => i.json.stock > 0 && i.json.stock <= 2).length;\nconst low = items.filter(i => i.json.stock > 2).length;\n\nconst tableRows = items.map(i => {\n  const d = i.json;\n  const color = d.stock === 0 ? '#ef4444' : d.stock <= 2 ? '#f97316' : '#eab308';\n  return `<tr><td style='padding:8px 12px'>${d.emoji} ${d.name}</td><td style='padding:8px 12px'>${d.category}</td><td style='padding:8px 12px'>${d.size}</td><td style='padding:8px 12px;font-weight:bold;color:${color}'>${d.stock}</td></tr>`;\n}).join('');\n\nreturn [{ json: { rows, tableRows, total: items.length, outOfStock, critical, low, timestamp: new Date().toLocaleString() } }];"
+      },
+      "id": "format-report",
+      "name": "Format Inventory Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "inventory@yourmiastore.com",
+        "fromName": "Bratz Drip Inventory",
+        "toEmail": "={{ \\.ADMIN_EMAIL }}",
+        "subject": "⚠️ Low Stock Alert — {{ $json.total }} items need restocking",
+        "emailType": "html",
+        "message": "<!DOCTYPE html><html><head><style>body{font-family:Arial,sans-serif;background:#f8f0ff;margin:0}.container{max-width:600px;margin:20px auto;background:white;border-radius:16px;overflow:hidden}.header{background:#1A0A2E;padding:32px;color:white}.header h1{font-size:24px;margin:0;color:#FF0066}.body{padding:32px}.stat-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:20px 0}.stat{padding:16px;border-radius:12px;text-align:center}.stat-value{font-size:28px;font-weight:900}.stat-label{font-size:12px;color:#888;text-transform:uppercase;letter-spacing:1px}table{width:100%;border-collapse:collapse}th{background:#f8f0ff;padding:10px 12px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#888}td{font-size:14px;border-bottom:1px solid #f0e0ff}</style></head><body><div class='container'><div class='header'><h1>⚠️ LOW STOCK ALERT</h1><p style='color:rgba(255,255,255,0.6);margin:8px 0 0;font-size:13px'>Generated: {{ $json.timestamp }}</p></div><div class='body'><div class='stat-grid'><div class='stat' style='background:#fee2e2'><div class='stat-value' style='color:#ef4444'>{{ $json.outOfStock }}</div><div class='stat-label'>Out of Stock</div></div><div class='stat' style='background:#ffedd5'><div class='stat-value' style='color:#f97316'>{{ $json.critical }}</div><div class='stat-label'>Critical (≤2)</div></div><div class='stat' style='background:#fef9c3'><div class='stat-value' style='color:#eab308'>{{ $json.low }}</div><div class='stat-label'>Low (≤5)</div></div></div><table><thead><tr><th>Product</th><th>Category</th><th>Size</th><th>Stock</th></tr></thead><tbody>{{ $json.tableRows }}</tbody></table><p style='color:#888;font-size:13px;margin-top:20px'>Please restock these items to avoid lost sales.</p></div></div></body></html>"
+      },
+      "id": "send-inventory-email",
+      "name": "Email: Low Stock Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://hooks.slack.com/services/YOUR_SLACK_WEBHOOK",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "⚠️ *Low Stock Alert* — {{ $json.total }} items need restocking\\n🔴 Out of Stock: {{ $json.outOfStock }} | 🟠 Critical: {{ $json.critical }} | 🟡 Low: {{ $json.low }}\\n\\n{{ $json.rows }}"
+            }
+          ]
+        }
+      },
+      "id": "slack-alert",
+      "name": "Slack: Low Stock Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1120,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Every 6 Hours": {
+      "main": [
+        [
+          {
+            "node": "Check Low Stock Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Low Stock Products": {
+      "main": [
+        [
+          {
+            "node": "Any Low Stock Items?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Low Stock Items?": {
+      "main": [
+        [
+          {
+            "node": "Format Inventory Report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Format Inventory Report": {
+      "main": [
+        [
+          {
+            "node": "Email: Low Stock Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Slack: Low Stock Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "bratz-drip"
+    }
+  ]
+}
