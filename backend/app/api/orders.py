@@ -1,166 +1,177 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-import uuid
+from sqlalchemy import select
+from typing import Optional, List
+import random
+import string
 import httpx
 import os
-from typing import List, Optional
-from datetime import datetime
-
 from app.core.database import get_db
-from app.models import Order, Customer, InventoryLog
-from app.models.schemas import OrderCreate, OrderResponse, OrderUpdateStatus
+from app.models.models import Order, OrderItem, OrderStatusHistory, Customer, PromoCode
+from app.schemas.schemas import OrderCreate, OrderOut
 
-router = APIRouter(prefix="/orders", tags=["orders"])
-
-N8N_ORDER_WEBHOOK = os.getenv("N8N_WEBHOOK_ORDER_URL", "")
-
-def generate_order_number():
-    ts = datetime.now().strftime("%y%m%d")
-    uid = str(uuid.uuid4()).split("-")[0].upper()
-    return f"BD-{ts}-{uid}"
+router = APIRouter(prefix="/api/orders", tags=["orders"])
 
 
-@router.post("/", response_model=OrderResponse, status_code=201)
-async def create_order(order_in: OrderCreate, db: AsyncSession = Depends(get_db)):
-    """Place a new order. Triggers n8n for confirmation email."""
-    
-    # Find or create customer
-    customer = None
-    if order_in.customer_id:
-        # Logged-in user: look up directly by ID
-        result = await db.execute(select(Customer).where(Customer.id == order_in.customer_id))
-        customer = result.scalar_one_or_none()
-    elif order_in.customer_email:
-        result = await db.execute(select(Customer).where(Customer.email == order_in.customer_email))
-        customer = result.scalar_one_or_none()
-        if not customer:
-            customer = Customer(
-                id=str(uuid.uuid4()),
-                email=order_in.customer_email,
-                first_name=order_in.customer_name.split()[0] if order_in.customer_name else None,
-                last_name=" ".join(order_in.customer_name.split()[1:]) if order_in.customer_name and len(order_in.customer_name.split()) > 1 else None,
-            )
-            db.add(customer)
-            await db.flush()
-
-    # Build line_items as JSON-serializable list
-    line_items = [item.model_dump() for item in order_in.line_items]
-
-    new_order = Order(
-        id=str(uuid.uuid4()),
-        order_number=generate_order_number(),
-        customer_id=customer.id if customer else None,
-        subtotal=order_in.subtotal,
-        tax=order_in.tax,
-        shipping=order_in.shipping,
-        discount=order_in.discount,
-        total=order_in.total,
-        financial_status="pending",
-        fulfillment_status="unfulfilled",
-        line_items=line_items,
-        shipping_address=order_in.shipping_address,
-        billing_address=order_in.billing_address,
-        notes=order_in.notes,
-        stripe_payment_intent_id=order_in.stripe_payment_intent_id,
-    )
-    db.add(new_order)
-
-    # Update customer stats
-    if customer:
-        customer.total_orders = (customer.total_orders or 0) + 1
-        customer.total_spent = (customer.total_spent or 0.0) + order_in.total
-
-    # Log inventory changes
-    for item in order_in.line_items:
-        log = InventoryLog(
-            id=str(uuid.uuid4()),
-            product_id=item.product_id,
-            quantity_change=-item.quantity,
-            reason="sale",
-            order_id=new_order.id,
-        )
-        db.add(log)
-
-    await db.commit()
-    await db.refresh(new_order)
-
-    # Trigger n8n workflow 01 in background (non-blocking)
-    if N8N_ORDER_WEBHOOK:
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(N8N_ORDER_WEBHOOK, json={
-                    "order": {
-                        "id": new_order.id,
-                        "order_number": new_order.order_number,
-                        "customer_email": order_in.customer_email,
-                        "customer_name": order_in.customer_name,
-                        "total": new_order.total,
-                        "subtotal": new_order.subtotal,
-                        "discount": new_order.discount,
-                        "shipping_cost": new_order.shipping,
-                        "created_at": new_order.created_at.isoformat() if new_order.created_at else None,
-                    },
-                    "items": line_items,
-                })
-        except Exception as e:
-            print(f"n8n order webhook failed (non-critical): {e}")
-
-    return new_order
+def generate_order_number() -> str:
+    chars = string.ascii_uppercase + string.digits
+    suffix = "".join(random.choices(chars, k=6))
+    return f"BD-{suffix}"
 
 
-@router.get("/", response_model=List[OrderResponse])
-async def list_orders(
+@router.get("", response_model=List[OrderOut])
+async def get_orders(
     email: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
-    limit: int = Query(50, le=200),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
-    """List orders — filter by customer email or status."""
-    stmt = select(Order).order_by(Order.created_at.desc()).limit(limit)
+    query = select(Order)
     if email:
-        result_cust = await db.execute(select(Customer).where(Customer.email == email))
-        customer = result_cust.scalar_one_or_none()
-        if customer:
-            stmt = stmt.where(Order.customer_id == customer.id)
-        else:
-            return []
+        query = query.where(Order.customer_email == email)
     if status:
-        stmt = stmt.where(Order.financial_status == status)
-    result = await db.execute(stmt)
-    return result.scalars().all()
+        query = query.where(Order.status == status)
+
+    query = query.order_by(Order.created_at.desc())
+    result = await db.execute(query)
+    orders = result.scalars().all()
+
+    for order in orders:
+        items_result = await db.execute(
+            select(OrderItem).where(OrderItem.order_id == order.id)
+        )
+        order.items = items_result.scalars().all()
+
+    return orders
 
 
-@router.get("/{order_id}", response_model=OrderResponse)
+@router.get("/{order_id}", response_model=OrderOut)
 async def get_order(order_id: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    return order
-
-
-@router.patch("/{order_id}/status", response_model=OrderResponse)
-async def update_order_status(order_id: str, update: OrderUpdateStatus, db: AsyncSession = Depends(get_db)):
-    """Update order status (financial / fulfillment / tracking)."""
-    result = await db.execute(select(Order).where(Order.id == order_id))
-    order = result.scalar_one_or_none()
+        # Try by order_number
+        result = await db.execute(select(Order).where(Order.order_number == order_id))
+        order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
-    if update.financial_status:
-        order.financial_status = update.financial_status
-    if update.fulfillment_status:
-        order.fulfillment_status = update.fulfillment_status
-        if update.fulfillment_status == "fulfilled":
-            order.fulfilled_at = datetime.utcnow()
-    if update.tracking_number:
-        order.tracking_number = update.tracking_number
-    if update.tracking_url:
-        order.tracking_url = update.tracking_url
-    if update.notes:
-        order.notes = update.notes
+    items_result = await db.execute(
+        select(OrderItem).where(OrderItem.order_id == order.id)
+    )
+    order.items = items_result.scalars().all()
+    return order
+
+
+@router.post("", response_model=OrderOut, status_code=201)
+async def create_order(data: OrderCreate, db: AsyncSession = Depends(get_db)):
+    # Calculate pricing
+    subtotal = sum(item.price * item.quantity for item in data.items)
+    discount = 0.0
+    shipping_cost = 9.99 if subtotal < 150 else 0.0
+
+    # Apply promo code
+    if data.promo_code:
+        promo_result = await db.execute(
+            select(PromoCode).where(
+                PromoCode.code == data.promo_code.upper(),
+                PromoCode.is_active == True,
+            )
+        )
+        promo = promo_result.scalar_one_or_none()
+        if promo and subtotal >= float(promo.min_order):
+            if promo.max_uses is None or promo.used_count < promo.max_uses:
+                if promo.discount_type == "percentage":
+                    discount = subtotal * (float(promo.discount_value) / 100)
+                else:
+                    discount = float(promo.discount_value)
+                promo.used_count += 1
+
+    total = subtotal - discount + shipping_cost
+
+    # Upsert customer
+    cust_result = await db.execute(
+        select(Customer).where(Customer.email == data.customer_email)
+    )
+    customer = cust_result.scalar_one_or_none()
+    if not customer:
+        customer = Customer(
+            email=data.customer_email,
+            first_name=data.customer_name.split()[0] if data.customer_name else None,
+            last_name=" ".join(data.customer_name.split()[1:]) if data.customer_name and len(data.customer_name.split()) > 1 else None,
+        )
+        db.add(customer)
+        await db.flush()
+
+    # Generate unique order number
+    for _ in range(5):
+        order_number = generate_order_number()
+        existing = await db.execute(select(Order).where(Order.order_number == order_number))
+        if not existing.scalar_one_or_none():
+            break
+
+    order = Order(
+        order_number=order_number,
+        customer_id=customer.id,
+        customer_email=data.customer_email,
+        customer_name=data.customer_name,
+        status="confirmed",
+        subtotal=subtotal,
+        discount=discount,
+        shipping_cost=shipping_cost,
+        total=total,
+        promo_code=data.promo_code,
+        shipping_address=data.shipping_address.model_dump(),
+        notes=data.notes,
+    )
+    db.add(order)
+    await db.flush()
+
+    # Add order items
+    order_items = []
+    for item in data.items:
+        oi = OrderItem(
+            order_id=order.id,
+            product_id=item.product_id,
+            product_name=item.product_name,
+            size=item.size,
+            price=item.price,
+            quantity=item.quantity,
+            subtotal=item.price * item.quantity,
+        )
+        db.add(oi)
+        order_items.append(oi)
+
+    # Status history
+    history = OrderStatusHistory(
+        order_id=order.id,
+        old_status=None,
+        new_status="confirmed",
+        note="Order placed successfully",
+    )
+    db.add(history)
+
+    # Update customer stats
+    customer.total_orders += 1
+    customer.total_spent = float(customer.total_spent) + total
 
     await db.commit()
     await db.refresh(order)
+    order.items = order_items
+
+    # Trigger n8n webhook (non-blocking)
+    n8n_url = os.getenv("N8N_WEBHOOK_ORDER_URL")
+    if n8n_url:
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                await client.post(n8n_url, json={
+                    "order_number": order.order_number,
+                    "customer_email": order.customer_email,
+                    "customer_name": order.customer_name,
+                    "total": float(order.total),
+                    "items": [{"name": i.product_name, "qty": i.quantity, "price": float(i.price)} for i in order_items],
+                    "shipping_address": order.shipping_address,
+                })
+        except Exception:
+            pass  # Don't fail the order if n8n is down
+
     return order

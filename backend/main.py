@@ -1,61 +1,55 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
+from app.core.config import settings
+from app.api.products import router as products_router
+from app.api.orders import router as orders_router
+from app.api.cart import router as cart_router
+from app.api.wishlist import router as wishlist_router
+from app.api.customers import router as customers_router
+from app.api.subscribe import router as subscribe_router
+from app.api.promos import router as promos_router
+from app.api.webhook import router as webhook_router
+from app.api.quotes import router as quotes_router
+from app.api.auth import router as auth_router
 
 app = FastAPI(
-    title="Bratz Beauty Doll Store API",
-    description="Full e-commerce backend: Products, Orders, Customers, Quotes, Cart, Wishlist, Promo Codes, n8n Automation",
-    version="2.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    title=settings.PROJECT_NAME,
+    description="Luxury E-Commerce Backend — WearBratz / Bratz Drip",
+    version=settings.API_VERSION
 )
-
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ================================================================
-# HEALTH CHECK
-# ================================================================
-@app.get("/health", tags=["health"])
-async def health_check():
+app.include_router(products_router)
+app.include_router(orders_router)
+app.include_router(cart_router)
+app.include_router(wishlist_router)
+app.include_router(customers_router)
+app.include_router(subscribe_router)
+app.include_router(promos_router)
+app.include_router(webhook_router)
+app.include_router(quotes_router)
+app.include_router(auth_router)
+
+@app.get("/")
+async def root():
     return {
-        "status": "healthy",
-        "service": "Bratz Beauty Store API",
-        "version": "2.0.0",
-        "endpoints": [
-            "GET  /api/v1/products/",
-            "POST /api/v1/orders/",
-            "POST /api/v1/customers/",
-            "GET  /api/v1/cart/{session_id}",
-            "POST /api/v1/wishlist/toggle",
-            "POST /api/v1/promo/validate",
-            "POST /api/v1/subscribe",
-            "POST /api/v1/quotes/",
-            "POST /webhooks/stripe",
-        ]
+        "message": f"Welcome to {settings.PROJECT_NAME} API",
+        "version": settings.API_VERSION,
+        "environment": settings.ENVIRONMENT,
+        "docs": "/docs",
     }
 
-# ================================================================
-# API ROUTERS
-# ================================================================
-from app.api import products, quotes, store, payments, orders, customers, cart, store_utils, auth
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
 
-app.include_router(auth.router,        prefix="/api/v1")
-app.include_router(products.router,    prefix="/api/v1")
-app.include_router(orders.router,      prefix="/api/v1")
-app.include_router(customers.router,   prefix="/api/v1")
-app.include_router(cart.router,        prefix="/api/v1")
-app.include_router(store_utils.router, prefix="/api/v1")
-app.include_router(quotes.router,      prefix="/api/v1")
-app.include_router(store.router,       prefix="/api/v1")
-app.include_router(payments.router,    prefix="/webhooks")
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

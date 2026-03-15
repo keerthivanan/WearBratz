@@ -1,7 +1,24 @@
 {
-  "venvPath": "backend",
-  "venv": "venv",
-  "extraPaths": [
+  "include": [
     "backend"
-  ]
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "venv"
+  ],
+  "venvPath": "C:/Users/91709/anaconda3/envs",
+  "venv": "miastore",
+  "pythonPath": "C:/Users/91709/anaconda3/envs/miastore/python.exe",
+  "executionEnvironments": [
+    {
+      "root": "backend",
+      "extraPaths": [
+        "backend",
+        "C:/Users/91709/anaconda3/envs/miastore/Lib/site-packages"
+      ]
+    }
+  ],
+  "typeCheckingMode": "basic",
+  "useLibraryCodeForTypes": true
 }

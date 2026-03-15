@@ -1,55 +1,51 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
-import uuid
-from datetime import datetime
-
 from app.core.database import get_db
-from app.models import CustomQuote
-from app.models.schemas import CustomQuoteCreate, CustomQuoteResponse
-
-# Temporarily skipping actual HTTP hit to n8n to avoid hanging if n8n is not up yet
-# import httpx
+from app.models.models import QuoteRequest
+from pydantic import BaseModel, EmailStr
+from typing import Optional
+import httpx
+import os
 
 router = APIRouter(prefix="/quotes", tags=["quotes"])
 
-def generate_quote_number():
-    return f"QUO-{datetime.now().strftime('%Y%m')}-{str(uuid.uuid4()).split('-')[0].upper()}"
+class QuoteCreate(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+    phone: Optional[str] = None
+    product_name: str
+    requirements: Optional[str] = None
 
-async def trigger_n8n_custom_quote_workflow(quote_data: dict):
+async def trigger_n8n_quote_workflow(quote_id: str, data: QuoteCreate):
     """
-    This function will be run in the background to send the quote data to n8n.
-    For now, it's just a mock since n8n isn't fully configured yet.
+    Triggers the n8n workflow for custom quote processing.
     """
-    # async with httpx.AsyncClient() as client:
-    #     await client.post("http://localhost:5678/webhook/custom-quote", json=quote_data)
-    print(f"Triggered n8n workflow for Quote {quote_data.get('quote_number')}")
+    webhook_url = os.getenv("N8N_WEBHOOK_QUOTE_URL") # Need to ensure this is in .env or configured
+    if not webhook_url:
+        return
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.post(webhook_url, json={
+                "quote_id": quote_id,
+                **data.dict()
+            })
+        except Exception as e:
+            print(f"Error triggering n8n: {e}")
 
-
-@router.post("/", response_model=CustomQuoteResponse, status_code=201)
-async def submit_custom_quote_request(
-    quote_in: CustomQuoteCreate, 
+@router.post("/", status_code=201)
+async def create_quote_request(
+    quote: QuoteCreate, 
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
 ):
-    
-    new_quote = CustomQuote(**quote_in.model_dump())
-    new_quote.id = str(uuid.uuid4())
-    new_quote.quote_number = generate_quote_number()
-    new_quote.status = "pending"
-    
-    db.add(new_quote)
+    db_quote = QuoteRequest(**quote.dict())
+    db.add(db_quote)
     await db.commit()
-    await db.refresh(new_quote)
+    await db.refresh(db_quote)
     
-    # Trigger the n8n automation in the background
-    quote_data_for_n8n = {
-        "quote_id": new_quote.id,
-        "quote_number": new_quote.quote_number,
-        "customer_email": new_quote.customer_email,
-        "customer_name": new_quote.customer_name,
-        "doll_type": new_quote.doll_type,
-        "outfit_description": new_quote.outfit_description
-    }
-    background_tasks.add_task(trigger_n8n_custom_quote_workflow, quote_data_for_n8n)
+    # Trigger n8n automation in the background
+    background_tasks.add_task(trigger_n8n_quote_workflow, db_quote.id, quote)
     
-    return new_quote
+    return {"message": "Quote request received successfully", "quote_id": db_quote.id}

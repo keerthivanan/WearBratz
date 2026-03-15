@@ -1,0 +1,60 @@
+# CORE FRAMEWORK
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+
+# ASYNC SUPPORT
+asyncio
+aiohttp
+asyncpg
+aiofiles
+
+# DATABASE
+sqlalchemy>=2.0.0
+alembic
+psycopg2-binary
+databases
+
+# AUTHENTICATION
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+bcrypt
+pyjwt
+
+# PAYMENT
+stripe
+
+# HTTP CLIENT
+httpx
+requests
+
+# UTILITIES
+python-dotenv
+pydantic-extra-types
+python-dateutil
+pytz
+
+# EMAIL
+resend
+
+# AI
+openai
+anthropic
+
+# MONITORING
+loguru
+
+# IMAGE
+pillow
+cloudinary
+
+# JSON
+orjson
+ujson
+
+# GOOGLE AUTH
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
